@@ -159,6 +159,23 @@ public:
         }
     }
 
+    Cursor drop(Cursor c) {
+        assert(!c.left().isNode());
+        assert(!c.right().isNode());
+        --numOfNodes;
+        if (c == root()) {
+            rootNode.reset();
+            return root();
+        }
+        Cursor parent = c.parent();
+        if (c.isLeft()) {
+            parent.node()->left.reset();
+            return parent.left();
+        }
+        parent.node()->right.reset();
+        return parent.right();
+    }
+
     Cursor rotateLeft(Cursor c) {
         Node* node = c.node();
         Node* parent = node->parent;
@@ -243,9 +260,27 @@ public:
         return findFrom(tree.root(), key);
     }
 
+    Cursor findRightmost(Cursor c) {
+        if (!c.isNode() || !c.right().isNode()) {
+            return c;
+        }
+        return findRightmost(c.right());
+    }
+
+    Cursor findLeftmost(Cursor c) {
+        if (!c.isNode() || !c.left().isNode()) {
+            return c;
+        }
+        return findLeftmost(c.left());
+    }
+
     Cursor newNode(Cursor c) {
         assert(!c.isNode());
         return tree.createNode(c);
+    }
+
+    Cursor drop(Cursor c) {
+        return tree.drop(c);
     }
 
     Cursor rotateLeft(Cursor c) {
@@ -255,6 +290,7 @@ public:
     Cursor rotateRight(Cursor c) {
         return tree.rotateRight(c);
     }
+
 
 private:
     BinaryTree<T> tree;
@@ -298,6 +334,11 @@ public:
         return tree.size();
     }
 
+    bool contains(const T& value) {
+        Cursor c = tree.find(value);
+        return c.isNode();
+    }
+
     void insert(T&& value) {
         Cursor c = tree.find(value);
         if (c.isNode()) {
@@ -307,6 +348,14 @@ public:
         c = tree.newNode(c);
         c.value() = ColorValue(true, std::move(value));
         fixRed(c);
+    }
+
+    void erase(const T& value) {
+        Cursor c = tree.find(value);
+        if (!c.isNode()) {
+            return;
+        }
+        remove(c);
     }
 
     void print() {
@@ -384,16 +433,145 @@ private:
             return;
         }
     }
+
+    void remove(Cursor c) {
+        Cursor left = c.left();
+        Cursor right = c.right();
+        if (!left.isNode() && !right.isNode() && (c.value().red || c == tree.root())) {
+            tree.drop(c);
+            return;
+        }
+        if (left.isNode() && right.isNode()) {
+            Cursor replacement = tree.findRightmost(c.left());
+            c.value().value = std::move(replacement.value().value);
+            remove(replacement);
+            return;
+        }
+        assert(!c.value().red);
+        if (left.isNode()) {
+            c.value().value = std::move(left.value().value);
+            remove(left);
+            return;
+        }
+        if (right.isNode()) {
+            c.value().value = std::move(right.value().value);
+            remove(right);
+            return;
+        }
+        c = tree.drop(c);
+        fixBlack(c);
+    }
+
+    void fixBlack(Cursor c) {
+        if (c.isLeft()) {
+            fixBlackLeft(c.parent());
+            return;
+        }
+        if (c.isRight()){
+            fixBlackRight(c.parent());
+            return;
+        }
+    }
+
+    void fixBlackLeft(Cursor parent) {
+        assert(parent.isNode());
+        Cursor sibling = parent.right();
+        assert(sibling.isNode());
+        Cursor left = sibling.left();        
+        Cursor right = sibling.right();
+        if (sibling.value().red) {
+            parent.value().red = true;
+            sibling.value().red = false;
+            parent = tree.rotateLeft(parent);
+            assert(parent.left().right().isNode());
+            assert(!parent.left().right().value().red);
+            fixBlackLeft(parent.left());
+            return;
+        }
+        if (right.isNode() && right.value().red) {
+            sibling.value().red = parent.value().red;
+            parent.value().red = false;
+            right.value().red = false;
+            tree.rotateLeft(parent);
+            return;
+        }
+        if (left.isNode() && left.value().red) {
+            sibling.value().red = true;
+            left.value().red = false;
+            tree.rotateRight(sibling);
+            fixBlackLeft(parent);
+            return;
+        }
+        sibling.value().red = true;
+        if (parent.value().red) {
+            parent.value().red = false;
+            return;
+        }
+        fixBlack(parent);
+    }
+
+    void fixBlackRight(Cursor parent) {
+        assert(parent.isNode());
+        Cursor sibling = parent.left();
+        assert(sibling.isNode());
+        Cursor right = sibling.right();        
+        Cursor left = sibling.left();
+        if (sibling.value().red) {
+            parent.value().red = true;
+            sibling.value().red = false;
+            parent = tree.rotateRight(parent);
+            assert(parent.right().left().isNode());
+            assert(!parent.right().left().value().red);
+            fixBlackRight(parent.right());
+            return;
+        }
+        if (left.isNode() && left.value().red) {
+            sibling.value().red = parent.value().red;
+            parent.value().red = false;
+            left.value().red = false;
+            tree.rotateRight(parent);
+            return;
+        }
+        if (right.isNode() && right.value().red) {
+            sibling.value().red = true;
+            right.value().red = false;
+            tree.rotateLeft(sibling);
+            fixBlackRight(parent);
+            return;
+        }
+        sibling.value().red = true;
+        if (parent.value().red) {
+            parent.value().red = false;
+            return;
+        }
+        fixBlack(parent);
+    }
 };
 
 
 int main() {
     RedBlackTree<int> tree;
-    IntVec values = randomVector(50);
+    //IntVec values = randomVector(50);
+    IntVec values{
+        64, 44, 33, 54, 99, 45, 33, 80, 87, 4,
+        100, 0, 79, 19, 0, 77, 6, 100, 40, 9,
+        44, 65, 45, 3, 10, 75, 11, 57, 12, 66,
+        62, 66, 4, 47, 24, 27, 56, 15, 59, 78,
+        45, 37, 73, 26, 26, 47, 69, 62, 73, 79
+    };
+    printVector(values);
+    std::cout << "----------------------------------------------------------------" << std::endl;
+    for (auto v: values) {
+        tree.insert(std::move(v));
+    }
     tree.print();
     for (auto v: values) {
-        std::cout << "----------------------------------------" << std::endl;
-        tree.insert(std::move(v));
+        if (!tree.contains(v)) {
+            continue;
+        }
+        std::cout << "----------------------------------------------------------------" << std::endl;
+        std::cout << "erase: " << v << std::endl;
+        tree.erase(std::move(v));
         tree.print();
     }
     return 0;
